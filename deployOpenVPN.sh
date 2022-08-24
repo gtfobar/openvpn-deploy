@@ -246,7 +246,8 @@ CLIENTS='gtfobar
 sis
 mom
 dad
-kate'
+kate
+guest'
 
 installOpenVPN
 
