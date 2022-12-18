@@ -241,13 +241,17 @@ function newClient() {
 	echo "Download the .ovpn file and import it in your OpenVPN client."
 }
 
-
-CLIENTS='gtfobar
+CLIENTS_LIST_FILE=$1
+CLIENTS=`cat $CLIENTS_LIST_FILE`
+if [ -z "$CLIENTS" ]; then
+	CLIENTS='gtfobar
 sis
 mom
 dad
 kate
-guest'
+guest
+vlad'
+fi
 
 installOpenVPN
 
