@@ -1,0 +1,13 @@
+[Unit]
+Description=iptables rules for OpenVPN
+Before=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$IPTABLES_DIR/add-openvpn-rules.sh
+ExecStop=$IPTABLES_DIR/remove-openvpn-rules.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
