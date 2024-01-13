@@ -68,6 +68,8 @@ function setupClientPki () {
 
 	pushd $EASYRSA_DIR > /dev/null || echo "Error: $EASYRSA_DIR not exists"
 	echo 'yes' | ./easyrsa build-client-full "$CLIENT_NAME" nopass
+	mkdir -p $CLIENT_CONFIG_DIR/$CLIENT_NAME
+	cp $EASYRSA_DIR/pki/inline/$CLIENT_NAME.inline $EASYRSA_DIR/pki/issued/$CLIENT_NAME.crt $EASYRSA_DIR/pki/private/$CLIENT_NAME.key $CLIENT_CONFIG_DIR/$CLIENT_NAME/
 	popd
 }
 
@@ -82,7 +84,8 @@ function generateClientConfig () {
 	local CLIENT_NAME="$1"
 
 
-	local CLIENT_CONFIG_FILE="$CLIENT_CONFIG_DIR/$CLIENT_NAME.ovpn"
+	local CLIENT_CONFIG_INLINE="$CLIENT_CONFIG_DIR/$CLIENT_NAME/$CLIENT_NAME-inline.ovpn"
+	local CLIENT_CONFIG_FILE="$CLIENT_CONFIG_DIR/$CLIENT_NAME/$CLIENT_NAME.ovpn"
 	mkdir -p $OPENVPN_DIR
 
 	SERVER_IP=$SERVER_IP \
@@ -93,13 +96,32 @@ function generateClientConfig () {
 	# CLIENT_KEY="$(cat $EASYRSA_DIR/pki/private/$CLIENT_NAME.key)" \
 	# TLS_CRYPT_KEY="$(cat $OPENVPN_DIR/tls-crypt.key)" \
 	envsubst < $CLIENT_TEMPLATE_FILE | removeComments > "$CLIENT_CONFIG_FILE"
-	cat $EASYRSA_DIR/pki/inline/$CLIENT_NAME.inline >> "$CLIENT_CONFIG_FILE"
 	
 	{
+		cat "$CLIENT_CONFIG_FILE"
+		echo
+		cat $CLIENT_CONFIG_DIR/$CLIENT_NAME/$CLIENT_NAME.inline
+		echo
 		echo "<tls-crypt>"
 		cat $OPENVPN_DIR/tls-crypt.key | removeComments
 		echo "</tls-crypt>" 
-	} >> "$CLIENT_CONFIG_FILE"
+	} > "$CLIENT_CONFIG_INLINE"
+}
+
+function deployServerSystemd () {
+	# Configure and deploy OpenVPN server systemd script
+	# Requirements:
+	# 	- dependencies installed (installDependencies)
+	# 	- server PKI initialized (setupServerPki)
+	# 	- server config generated (generateServerConfig)
+
+	OPENVPN_DIR=$OPENVPN_DIR \
+	envsubst < $OPENVPN_SERVICE_TEMPLATE_FILE > /etc/systemd/system/openvpn@$SERVER_NAME.service
+
+	# Enable service and apply rules
+	systemctl daemon-reload
+	systemctl enable openvpn@$SERVER_NAME
+	systemctl start openvpn@$SERVER_NAME
 }
 
 function addClient () {
@@ -147,10 +169,10 @@ function configureIpTables () {
 	chmod +x $IPTABLES_DIR/add-openvpn-rules.sh
 	chmod +x $IPTABLES_DIR/remove-openvpn-rules.sh
 
-	configureIptablesSystemd
+	deployIptablesSystemd
 }
 
-function configureIptablesSystemd () {
+function deployIptablesSystemd () {
 	# Configure systemd script to enable/disable iptables rules for OpenVPN
 
 	IPTABLES_DIR=$IPTABLES_DIR \
@@ -193,6 +215,7 @@ CLIENT_TEMPLATE_FILE="$(realpath templates/client.ovpn.template)"
 ADD_OPENVPN_RULES_TEMPLATE_FILE="$(realpath templates/add-openvpn-rules.sh.template)"
 REMOVE_OPENVPN_RULES_TEMPLATE_FILE="$(realpath templates/remove-openvpn-rules.sh.template)"
 IPTABLES_OPENVPN_SERVICE_TEMPLATE_FILE="$(realpath templates/iptables-openvpn.service.template)"
+OPENVPN_SERVICE_TEMPLATE_FILE="$(realpath templates/openvpn.service.template)"
 
 # Easy-rsa
 EASYRSA_ALGO=ec
@@ -213,6 +236,9 @@ elif [[ $COMMAND == "setup-server" ]]; then
 	SERVER_NAME=${2:-$SERVER_NAME}
 	setupServerPki
 	generateServerConfig
+elif [[ $COMMAND == "deploy-server" ]]; then
+	configureIpTables
+	deployServerSystemd
 elif [[ $COMMAND == "add-client" ]]; then
 	CLIENT_NAME=${2:-$CLIENT_NAME}
 	addClient $CLIENT_NAME
