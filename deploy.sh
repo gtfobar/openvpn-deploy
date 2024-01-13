@@ -12,12 +12,8 @@ function setupServerPki () {
 
 	### Initialize and go to temporary working directory
 	mkdir -p $EASYRSA_DIR
-	echo "Hello"
 	cp -r /usr/share/easy-rsa/* $EASYRSA_DIR || echo "Error: easy-rsa not installed"
-	echo "Hello"
 	pushd $EASYRSA_DIR > /dev/null || echo "Error: unable to use $EASYRSA_DIR directory"
-
-	echo "Hello"
 	./easyrsa init-pki
     ./easyrsa --batch build-ca nopass
 
@@ -169,9 +165,10 @@ function configureIptablesSystemd () {
 ### ********** Configurable parameters ********** ###
 
 ### General
-# OPENVPN_DIR="/etc/openvpn"
-OPENVPN_DIR="/tmp/openvpn"
+OPENVPN_DIR="/etc/openvpn"
+# OPENVPN_DIR="/tmp/openvpn"
 EASYRSA_DIR="$OPENVPN_DIR/easy-rsa"
+# IPTABLES_DIR="/tmp/iptables"
 IPTABLES_DIR="/etc/iptables"
 NETWORK_INTERFACE=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
 
