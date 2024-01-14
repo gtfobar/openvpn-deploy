@@ -120,6 +120,9 @@ function addServer() {
 	echo "[*] Generating server config for server $server_name"
 	generateServerConfig $server_name $server_port $ip_range
 
+	local client_config_dir="$OPENVPN_DIR/$server_name/ccd"
+	mkdir -p $client_config_dir
+
 	echo "[*] Configuring systemd for server $server_name"
 	configureServerSystemd $server_name
 
@@ -176,9 +179,6 @@ function generateClientConfig () {
 
 	local clients_dir="$OPENVPN_DIR/$server_name/clients/$client_name"
 	mkdir -p $clients_dir
-
-	local client_config_dir="$OPENVPN_DIR/$server_name/ccd"
-	mkdir -p $client_config_dir
 
 	local client_config_inline="$clients_dir/$client_name-inline.ovpn"
 	local client_config_file="$clients_dir/$client_name.ovpn"
