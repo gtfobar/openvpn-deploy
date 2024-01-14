@@ -9,25 +9,34 @@ function setupServerPki () {
 	# Create the PKI, set up the CA, the DH params and the server certificate
 	# Requirements:
 	# 	- easy-rsa, openvpn installed
+	# Parameters:
+	# 	- SERVER_NAME (required)
 
+	if [[ -z $1 ]]; then
+		echo "Please specify server name"
+		exit 1
+	fi
+	local server_name=$1
+
+	local server_config_dir="$OPENVPN_DIR/$server_name"
 	### Initialize and go to temporary working directory
-	mkdir -p $EASYRSA_DIR
-	cp -r /usr/share/easy-rsa/* $EASYRSA_DIR || echo "Error: easy-rsa not installed"
-	pushd $EASYRSA_DIR > /dev/null || echo "Error: unable to use $EASYRSA_DIR directory"
+	mkdir -p $server_config_dir/easy-rsa
+	cp -r /usr/share/easy-rsa/* $server_config_dir/easy-rsa || echo "Error: easy-rsa not installed"
+	pushd $server_config_dir/easy-rsa > /dev/null || echo "Error: unable to use $server_config_dir/easy-rsa directory"
 	./easyrsa init-pki
     ./easyrsa --batch build-ca nopass
 
-	echo 'yes' | ./easyrsa build-server-full "$SERVER_NAME" nopass
+	echo 'yes' | ./easyrsa build-server-full "$server_name" nopass
 	./easyrsa gen-crl
 
 	# Generate tls-crypt key
-	openvpn --genkey secret $OPENVPN_DIR/tls-crypt.key
+	openvpn --genkey secret $server_config_dir/tls-crypt.key
 
 	# Move all the generated files
-	cp pki/ca.crt pki/private/ca.key "pki/issued/${SERVER_NAME}.crt" "pki/private/${SERVER_NAME}.key" pki/crl.pem $OPENVPN_DIR
+	cp pki/ca.crt pki/private/ca.key "pki/issued/${server_name}.crt" "pki/private/${server_name}.key" pki/crl.pem $server_config_dir/
 
 	# Make cert revocation list rw-r--r-- (readable for non-root)
-	chmod 644 $OPENVPN_DIR/crl.pem
+	chmod 644 $server_config_dir/crl.pem
 
 	popd > /dev/null || echo "Error: unable to return to previous directory"
 }
@@ -37,19 +46,76 @@ function generateServerConfig () {
 	# Requirements:
 	# 	- gettext installed
 	# 	- server PKI initialized (setupServerPki)
+	# Parameters:
+	# 	- server_name (required)
+	# 	- server_port (required)
+	# 	- ip_range (required)
 
-	mkdir -p $OPENVPN_DIR
+	if [[ -z $1 ]] || [[ -z $2 ]] || [[ -z $3 ]]; then
+		echo "Server name, port and IP range must be specified"
+		exit 1
+	fi
+	local server_name=$1
+	local server_port=$1
+	local ip_range=$1
+
+	local server_config_dir="$OPENVPN_DIR/$server_name"
 
 	# Using current DNS resolvers
-	RESOLVCONF='/etc/resolv.conf'
+	local resolvconf='/etc/resolv.conf'
 
 	# Obtain first resolver from resolv.conf
-	NAMESERVER=$(sed -ne 's/^nameserver[[:space:]]\+\([^[:space:]]\+\).*$/\1/p' $RESOLVCONF | head -n 1)
+	local nameserver=$(sed -ne 's/^nameserver[[:space:]]\+\([^[:space:]]\+\).*$/\1/p' $RESOLVCONF | head -n 1)
 
-	SERVER_PORT=$SERVER_PORT \
-	SERVER_NAME=$SERVER_NAME \
-	PUSH_DHCP_OPTION_DNS=$PUSH_DHCP_OPTION_DNS \
-	envsubst < $SERVER_TEMPLATE_FILE | removeComments > "$OPENVPN_DIR/$SERVER_NAME.conf"
+	SERVER_PORT=$server_port \
+	SERVER_NAME=$server_name \
+	NAMESERVER=$nameserver \
+	IP_RANGE=$ip_range \
+	envsubst < $SERVER_TEMPLATE_FILE | removeComments > "$server_config_dir/$server_name.conf"
+}
+
+function configureServerSystemd () {
+	# Configure and deploy OpenVPN server systemd script
+	# Requirements:
+	# 	- dependencies installed (installDependencies)
+	# 	- server PKI initialized (setupServerPki)
+	# 	- server config generated (generateServerConfig)
+	# Parameters:
+	# 	- server_name (required)
+
+	if [[ -z $1 ]]; then
+		echo "Please specify server name"
+		exit 1
+	fi
+	local server_name=$1
+
+	OPENVPN_DIR=$OPENVPN_DIR/$server_name \
+	envsubst < $OPENVPN_SERVICE_TEMPLATE_FILE > /etc/systemd/system/openvpn@$server_name.service
+
+	# Enable service and apply rules
+	systemctl daemon-reload
+	systemctl enable openvpn@$server_name
+	systemctl start openvpn@$server_name
+}
+
+function addServer() {
+	# Add a server
+	# Requirements:
+	# 	- easy-rsa, openvpn, gettext installed (installDependencies)
+	# Parameters:
+	# 	- server_name (optional)
+	# 	- server_port (optional)
+	# 	- ip_range (optional)
+
+	### If these properties are not set, they will be randomly generated
+	local server_name=${$1:-"server_$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 16)"}
+	local server_port=${$2:-"$(shuf -i49152-65535 -n1)"}
+	local ip_range=${$3:-"10.$(shuf -i0-255 -n1).$(shuf -i0-255 -n1).0"}
+
+	setupServerPki $server_name
+	generateServerConfig $server_name $server_port $ip_range
+	configureServerSystemd $server_name
+	configureIpTables $server_name
 }
 
 function removeComments () {
@@ -62,14 +128,23 @@ function setupClientPki () {
 	# Requirements:
 	# 	- easy-rsa installed
 	# 	- server PKI initialized
-	
 	# Parameters:
-	local CLIENT_NAME="$1"
+	# 	- server_name (required)
+	# 	- client_name (required)
 
-	pushd $EASYRSA_DIR > /dev/null || echo "Error: $EASYRSA_DIR not exists"
-	echo 'yes' | ./easyrsa build-client-full "$CLIENT_NAME" nopass
-	mkdir -p $CLIENT_CONFIG_DIR/$CLIENT_NAME
-	cp $EASYRSA_DIR/pki/inline/$CLIENT_NAME.inline $EASYRSA_DIR/pki/issued/$CLIENT_NAME.crt $EASYRSA_DIR/pki/private/$CLIENT_NAME.key $CLIENT_CONFIG_DIR/$CLIENT_NAME/
+	if [[ -z $1 ]] || [[ -z $2 ]]; then
+		echo "Please specify client name and server name"
+		exit 1
+	fi
+	local server_name="$1"
+	local client_name="$2"
+
+	local server_config_dir="$OPENVPN_DIR/$server_name"
+
+	pushd "$server_config_dir/easy-rsa" > /dev/null || echo "Error: $server_config_dir/easy-rsa not exists"
+	echo 'yes' | ./easyrsa build-client-full "$client_name" nopass
+	mkdir -p "$server_config_dir/ccd/$client_name"
+	cp pki/inline/$client_name.inline pki/issued/$client_name.crt pki/private/$client_name.key $server_config_dir/ccd/$client_name
 	popd
 }
 
@@ -79,64 +154,63 @@ function generateClientConfig () {
 	# 	- gettext installed
 	# 	- server PKI initialized (setupServerPki)
 	# 	- client PKI initialized (setupClientPki)
-
 	# Parameters:
-	local CLIENT_NAME="$1"
+	# 	- server_name (required)
+	# 	- client_name (required)
 
+	if [[ -z $1 ]] || [[ -z $2 ]]; then
+		echo "Please specify client name and server name"
+		exit 1
+	fi
+	local server_name="$1"
+	local client_name="$2"
 
-	local CLIENT_CONFIG_INLINE="$CLIENT_CONFIG_DIR/$CLIENT_NAME/$CLIENT_NAME-inline.ovpn"
-	local CLIENT_CONFIG_FILE="$CLIENT_CONFIG_DIR/$CLIENT_NAME/$CLIENT_NAME.ovpn"
-	mkdir -p $OPENVPN_DIR
+	local client_config_dir="$OPENVPN_DIR/$server_name/ccd/$client_name"
+	local client_config_inline="$client_config_dir/$client_name-inline.ovpn"
+	local client_config_file="$client_config_dir/$client_name.ovpn"
+	mkdir -p $client_config_dir
+
+	# Rather ugly
+	local server_port=$(cat $OPENVPN_DIR/$server_name/$server_name.conf | grep '^port' | awk '{print $2}')
 
 	SERVER_IP=$SERVER_IP \
-	SERVER_PORT=$SERVER_PORT \
-	SERVER_NAME=$SERVER_NAME \
+	SERVER_PORT=$server_port \
+	SERVER_NAME=$server_name \
 	# CA_CRT="$(cat $OPENVPN_DIR/ca.crt)" \
 	# CLIENT_CRT="$(cat $EASYRSA_DIR/pki/issued/$CLIENT_NAME.crt)" \
 	# CLIENT_KEY="$(cat $EASYRSA_DIR/pki/private/$CLIENT_NAME.key)" \
 	# TLS_CRYPT_KEY="$(cat $OPENVPN_DIR/tls-crypt.key)" \
-	envsubst < $CLIENT_TEMPLATE_FILE | removeComments > "$CLIENT_CONFIG_FILE"
+	envsubst < $CLIENT_TEMPLATE_FILE | removeComments > "$client_config_file"
 	
 	{
-		cat "$CLIENT_CONFIG_FILE"
+		cat "$client_config_file"
 		echo
-		cat $CLIENT_CONFIG_DIR/$CLIENT_NAME/$CLIENT_NAME.inline
+		cat $client_config_dir/$client_name.inline
 		echo
 		echo "<tls-crypt>"
-		cat $OPENVPN_DIR/tls-crypt.key | removeComments
+		cat $OPENVPN_DIR/$server_name/tls-crypt.key | removeComments
 		echo "</tls-crypt>" 
-	} > "$CLIENT_CONFIG_INLINE"
-}
-
-function deployServerSystemd () {
-	# Configure and deploy OpenVPN server systemd script
-	# Requirements:
-	# 	- dependencies installed (installDependencies)
-	# 	- server PKI initialized (setupServerPki)
-	# 	- server config generated (generateServerConfig)
-
-	OPENVPN_DIR=$OPENVPN_DIR \
-	envsubst < $OPENVPN_SERVICE_TEMPLATE_FILE > /etc/systemd/system/openvpn@$SERVER_NAME.service
-
-	# Enable service and apply rules
-	systemctl daemon-reload
-	systemctl enable openvpn@$SERVER_NAME
-	systemctl start openvpn@$SERVER_NAME
+	} > "$client_config_inline"
 }
 
 function addClient () {
 	# Add a client
 	# Requirements:
 	# 	- gettext installed
-	# 	- server PKI initialized (setupServerPki)
-
+	# 	- server created (addServer)
 	# Parameters:
-	local CLIENT_NAME="$1"
+	# 	- client_name (required)
+	# 	- server_name (required)
 
-	mkdir -p $CLIENT_CONFIG_DIR
+	if [[ -z $1 ]] || [[ -z $2 ]]; then
+		echo "Please specify client name"
+		exit 1
+	fi
+	local client_name="$1"
+	local server_name="$2"
 
-	setupClientPki $CLIENT_NAME
-	generateClientConfig $CLIENT_NAME
+	setupClientPki $server_name $client_name
+	generateClientConfig $server_name $client_name
 }
 
 function addClientsFromList () {
@@ -148,40 +222,62 @@ function addClientsFromList () {
 }
 
 function configureIpTables () {
+	# Create iptables rules for OpenVPN for a given ip range
+	# Parameters:
+	# 	- server_name (required)
+
+	if [[ -z $1 ]]; then
+		echo "Please specify IP range"
+		exit 1
+	fi
+	local server_name=$1
+	local ip_range=$(cat $OPENVPN_DIR/$server_name/$server_name.conf | grep '^server' | awk '{print $2}')
+	local server_port=$(cat $OPENVPN_DIR/$server_name/$server_name.conf | grep '^port' | awk '{print $2}')
+
 	# Enable routing
-	echo 'net.ipv4.ip_forward=1' >/etc/sysctl.d/99-openvpn.conf
-	sysctl --system
+	if [[ $(/etc/sysctl.d/99-openvpn.conf) != 'net.ipv4.ip_forward=1' ]]; then
+		echo 'net.ipv4.ip_forward=1' >/etc/sysctl.d/99-openvpn.conf
+		sysctl --system
+	fi
 
 	mkdir -p $IPTABLES_DIR
 
 	NIC=$NETWORK_INTERFACE \
-	IP_RANGE=$IP_RANGE \
-	PORT=$SERVER_PORT \
+	IP_RANGE=$ip_range \
+	PORT=$server_port \
 	PROTOCOL=udp \
-	envsubst < $ADD_OPENVPN_RULES_TEMPLATE_FILE > $IPTABLES_DIR/add-openvpn-rules.sh
+	envsubst < $ADD_OPENVPN_RULES_TEMPLATE_FILE > $IPTABLES_DIR/add-rules-$server_name.sh
 
 	NIC=$NETWORK_INTERFACE \
-	IP_RANGE=$IP_RANGE \
-	PORT=$SERVER_PORT \
+	IP_RANGE=$ip_range \
+	PORT=$server_port \
 	PROTOCOL=udp \
-	envsubst < $REMOVE_OPENVPN_RULES_TEMPLATE_FILE > $IPTABLES_DIR/remove-openvpn-rules.sh
+	envsubst < $REMOVE_OPENVPN_RULES_TEMPLATE_FILE > $IPTABLES_DIR/remove-rules-$server_name.sh
 
 	chmod +x $IPTABLES_DIR/add-openvpn-rules.sh
 	chmod +x $IPTABLES_DIR/remove-openvpn-rules.sh
 
-	deployIptablesSystemd
+	deployIptablesSystemd $server_name
 }
 
 function deployIptablesSystemd () {
 	# Configure systemd script to enable/disable iptables rules for OpenVPN
+	# Parameters:
+	# 	- server_name (required)
+
+	if [[ -z $1 ]]; then
+		echo "Please specify IP range"
+		exit 1
+	fi
+	local server_name=$1
 
 	IPTABLES_DIR=$IPTABLES_DIR \
-	envsubst < $IPTABLES_OPENVPN_SERVICE_TEMPLATE_FILE > /etc/systemd/system/iptables-openvpn.service
+	envsubst < $IPTABLES_OPENVPN_SERVICE_TEMPLATE_FILE > /etc/systemd/system/iptables-openvpn@$server_name.service
 
 	# Enable service and apply rules
 	systemctl daemon-reload
-	systemctl enable iptables-openvpn
-	systemctl start iptables-openvpn
+	systemctl enable iptables-openvpn@$server_name
+	systemctl start iptables-openvpn@$server_name
 }
 
 ### ********** Configurable parameters ********** ###
@@ -189,15 +285,9 @@ function deployIptablesSystemd () {
 ### General
 OPENVPN_DIR="/etc/openvpn"
 # OPENVPN_DIR="/tmp/openvpn"
-EASYRSA_DIR="$OPENVPN_DIR/easy-rsa"
 # IPTABLES_DIR="/tmp/iptables"
 IPTABLES_DIR="/etc/iptables"
 NETWORK_INTERFACE=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
-
-### Server
-SERVER_NAME=$server_$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 16)
-SERVER_PORT=$(shuf -i49152-65535 -n1)
-IP_RANGE="10.$(shuf -i0-255 -n1).$(shuf -i0-255 -n1).0"
 
 # Requires external interaction, but works fine with multiple network interfaces
 # SERVER_IP=${"$(curl -s ifconfig.me)"}
@@ -232,30 +322,35 @@ elif [[ $COMMAND == "remove-deps" ]]; then
 	#todo
 	# removeDependencies
 	echo "Not implemented"
-elif [[ $COMMAND == "setup-server" ]]; then
-	SERVER_NAME=${2:-$SERVER_NAME}
-	setupServerPki
-	generateServerConfig
-elif [[ $COMMAND == "deploy-server" ]]; then
-	configureIpTables
-	deployServerSystemd
+elif [[ $COMMAND == "add-server" ]]; then
+	SERVER_NAME=$2
+	addServer $SERVER_NAME
 elif [[ $COMMAND == "add-client" ]]; then
-	CLIENT_NAME=${2:-$CLIENT_NAME}
-	addClient $CLIENT_NAME
+	CLIENT_NAME=$2
+	if [[ -z $2 ]]; then
+		echo "Error: client name not specified"
+		exit 1
+	fi
+	SERVER_NAME=$3
+	if [[ -z $3 ]]; then
+		echo "Error: server name not specified"
+		exit 1
+	fi
+
+	addClient $SERVER_NAME $CLIENT_NAME 
 elif [[ $COMMAND == "add-clients" ]]; then
 	CLIENT_LIST_FILE=${2:-$CLIENT_LIST_FILE}
-	addClientsFromList
-elif [[ $COMMAND == "remove-iptables" ]]; then
-	#todo
-	# removeIpTables
-	echo "Not implemented"
-elif [[ $COMMAND == "configure-iptables" ]]; then
-	configureIpTables
+	SERVER_NAME=${3}
+	if [[ -z $3 ]]; then
+		echo "Error: server name not specified"
+		exit 1
+	fi
+	addClientsFromList $SERVER_NAME
 elif [[ $COMMAND == "revoke-client" ]]; then
 	#todo
 	CLIENT_NAME=${2:-$CLIENT_NAME}
 	# revokeClient $CLIENT_NAME
 	# echo "Not implemented"
 else
-	echo "Usage: $0 [install-deps|setup-server|add-client|add-clients|configure-iptables]"
+	echo "Usage: $0 [install-deps|setup-server|add-client|add-clients|configure-iptables|deploy-server]"
 fi

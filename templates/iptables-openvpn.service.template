@@ -5,8 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=$IPTABLES_DIR/add-openvpn-rules.sh
-ExecStop=$IPTABLES_DIR/remove-openvpn-rules.sh
+ExecStart=$IPTABLES_DIR/remove-rules-%i.sh
+ExecStop=$IPTABLES_DIR/remove-rules-%i.sh
 RemainAfterExit=yes
 
 [Install]
