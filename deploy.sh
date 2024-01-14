@@ -153,7 +153,7 @@ function setupClientPki () {
 
 	local server_config_dir="$OPENVPN_DIR/$server_name"
 
-	pushd "$server_config_dir/easy-rsa" > /dev/null || echo "Error: $server_config_dir/easy-rsa not exists"
+	pushd "$server_config_dir/$client_name/easy-rsa" > /dev/null || echo "Error: $server_config_dir/easy-rsa not exists"
 	echo 'yes' | ./easyrsa build-client-full "$client_name" nopass
 	mkdir -p "$server_config_dir/clients/$client_name"
 	cp pki/inline/$client_name.inline pki/issued/$client_name.crt pki/private/$client_name.key $server_config_dir/clients/$client_name
@@ -212,15 +212,15 @@ function addClient () {
 	# 	- gettext installed
 	# 	- server created (addServer)
 	# Parameters:
-	# 	- client_name (required)
 	# 	- server_name (required)
+	# 	- client_name (required)
 
 	if [[ -z $1 ]] || [[ -z $2 ]]; then
 		echo "Please specify client name"
 		exit 1
 	fi
-	local client_name="$1"
-	local server_name="$2"
+	local server_name="$1"
+	local client_name="$2"
 
 	setupClientPki $server_name $client_name
 	generateClientConfig $server_name $client_name
@@ -388,14 +388,14 @@ elif [[ $COMMAND == "add-server" ]]; then
 	SERVER_NAME=$2
 	addServer $SERVER_NAME
 elif [[ $COMMAND == "add-client" ]]; then
-	CLIENT_NAME=$2
+	SERVER_NAME=$2
 	if [[ -z $2 ]]; then
-		echo "Error: client name not specified"
+		echo "Error: server name not specified"
 		exit 1
 	fi
-	SERVER_NAME=$3
-	if [[ -z $3 ]]; then
-		echo "Error: server name not specified"
+	CLIENT_NAME=$3
+	if [[ -z $2 ]]; then
+		echo "Error: client name not specified"
 		exit 1
 	fi
 
