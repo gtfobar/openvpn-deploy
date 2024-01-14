@@ -89,6 +89,8 @@ function configureServerSystemd () {
 	fi
 	local server_name=$1
 
+	mkdir -p "/run/openvpn/$server_name"
+
 	OPENVPN_DIR=$OPENVPN_DIR/$server_name \
 	envsubst < $OPENVPN_SERVICE_TEMPLATE_FILE > /etc/systemd/system/openvpn@$server_name.service
 
