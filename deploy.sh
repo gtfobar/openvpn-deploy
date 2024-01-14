@@ -108,9 +108,9 @@ function addServer() {
 	# 	- ip_range (optional)
 
 	### If these properties are not set, they will be randomly generated
-	local server_name=${$1:-"server_$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 16)"}
-	local server_port=${$2:-"$(shuf -i49152-65535 -n1)"}
-	local ip_range=${$3:-"10.$(shuf -i0-255 -n1).$(shuf -i0-255 -n1).0"}
+	local server_name=${1:-"server_$(head /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 16)"}
+	local server_port=${2:-"$(shuf -i49152-65535 -n1)"}
+	local ip_range=${3:-"10.$(shuf -i0-255 -n1).$(shuf -i0-255 -n1).0"}
 
 	setupServerPki $server_name
 	generateServerConfig $server_name $server_port $ip_range
