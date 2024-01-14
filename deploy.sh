@@ -189,17 +189,24 @@ function generateClientConfig () {
 	SERVER_IP=$SERVER_IP \
 	SERVER_PORT=$server_port \
 	SERVER_NAME=$server_name \
-	# CA_CRT="$(cat $OPENVPN_DIR/ca.crt)" \
-	# CLIENT_CRT="$(cat $EASYRSA_DIR/pki/issued/$CLIENT_NAME.crt)" \
-	# CLIENT_KEY="$(cat $EASYRSA_DIR/pki/private/$CLIENT_NAME.key)" \
-	# TLS_CRYPT_KEY="$(cat $OPENVPN_DIR/tls-crypt.key)" \
 	envsubst < $CLIENT_TEMPLATE_FILE | removeComments > "$client_config_file"
 	
 	{
 		cat "$client_config_file"
 		echo
-		cat $clients_dir/$client_name.inline
-		echo
+
+		echo "<ca>"
+		cat $OPENVPN_DIR/$server_name/ca.crt
+		echo "</ca>"
+
+		echo "<cert>"
+		cat $OPENVPN_DIR/$server_name/clients/$client_name/$client_name.crt | removeComments
+		echo "</cert>"
+
+		echo "<key>"
+		cat $OPENVPN_DIR/$server_name/clients/$client_name/$client_name.key | removeComments
+		echo "</key>"
+
 		echo "<tls-crypt>"
 		cat $OPENVPN_DIR/$server_name/tls-crypt.key | removeComments
 		echo "</tls-crypt>" 
