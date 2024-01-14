@@ -261,8 +261,8 @@ function configureIpTables () {
 	PROTOCOL=udp \
 	envsubst < $REMOVE_OPENVPN_RULES_TEMPLATE_FILE > $IPTABLES_DIR/remove-rules-$server_name.sh
 
-	chmod +x $IPTABLES_DIR/add-openvpn-rules.sh
-	chmod +x $IPTABLES_DIR/remove-openvpn-rules.sh
+	chmod +x $IPTABLES_DIR/add-rules-$server_name.sh
+	chmod +x $IPTABLES_DIR/remove-rules-$server_name.sh
 
 	deployIptablesSystemd $server_name
 }
