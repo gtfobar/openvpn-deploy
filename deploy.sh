@@ -112,10 +112,21 @@ function addServer() {
 	local server_port=${2:-"$(shuf -i49152-65535 -n1)"}
 	local ip_range=${3:-"10.$(shuf -i0-255 -n1).$(shuf -i0-255 -n1).0"}
 
+	echo "[*] Configuring PKI for server $server_name"
 	setupServerPki $server_name
+	echo "Done"
+
+	echo "[*] Generating server config for server $server_name"
 	generateServerConfig $server_name $server_port $ip_range
+	echo "Done"
+
+	echo "[*] Configuring systemd for server $server_name"
 	configureServerSystemd $server_name
+	echo "Done"
+
+	echo "[*] Configuring iptables for server $server_name"
 	configureIpTables $server_name
+	echo "Done"
 }
 
 function removeComments () {
