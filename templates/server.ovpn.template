@@ -34,9 +34,7 @@ tls-server
 tls-version-min 1.2
 tls-cipher TLS-ECDHE-ECDSA-WITH-AES-128-GCM-SHA256
 
-# Default directory to store client configs. If you want to change it,
-# specify it here.
-client-config-dir /etc/openvpn/ccd
+client-config-dir /etc/openvpn/$SERVER_NAME/ccd
 
 # Default log file. You can change it, if you wish.
 status /var/log/openvpn/status.log

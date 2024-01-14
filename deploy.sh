@@ -152,8 +152,8 @@ function setupClientPki () {
 
 	pushd "$server_config_dir/easy-rsa" > /dev/null || echo "Error: $server_config_dir/easy-rsa not exists"
 	echo 'yes' | ./easyrsa build-client-full "$client_name" nopass
-	mkdir -p "$server_config_dir/ccd/$client_name"
-	cp pki/inline/$client_name.inline pki/issued/$client_name.crt pki/private/$client_name.key $server_config_dir/ccd/$client_name
+	mkdir -p "$server_config_dir/clients/$client_name"
+	cp pki/inline/$client_name.inline pki/issued/$client_name.crt pki/private/$client_name.key $server_config_dir/clients/$client_name
 	popd
 }
 
@@ -174,10 +174,14 @@ function generateClientConfig () {
 	local server_name="$1"
 	local client_name="$2"
 
-	local client_config_dir="$OPENVPN_DIR/$server_name/ccd/$client_name"
-	local client_config_inline="$client_config_dir/$client_name-inline.ovpn"
-	local client_config_file="$client_config_dir/$client_name.ovpn"
+	local clients_dir="$OPENVPN_DIR/$server_name/clients/$client_name"
+	mkdir -p $clients_dir
+
+	local client_config_dir="$OPENVPN_DIR/$server_name/ccd"
 	mkdir -p $client_config_dir
+
+	local client_config_inline="$clients_dir/$client_name-inline.ovpn"
+	local client_config_file="$clients_dir/$client_name.ovpn"
 
 	# Rather ugly
 	local server_port=$(cat $OPENVPN_DIR/$server_name/$server_name.conf | grep '^port' | awk '{print $2}')
@@ -194,7 +198,7 @@ function generateClientConfig () {
 	{
 		cat "$client_config_file"
 		echo
-		cat $client_config_dir/$client_name.inline
+		cat $clients_dir/$client_name.inline
 		echo
 		echo "<tls-crypt>"
 		cat $OPENVPN_DIR/$server_name/tls-crypt.key | removeComments
@@ -287,6 +291,55 @@ function deployIptablesSystemd () {
 	systemctl daemon-reload
 	systemctl enable iptables-openvpn@$server_name
 	systemctl start iptables-openvpn@$server_name
+}
+
+function setStaticIp() {
+	# Set static IP for a client
+	# Requirements:
+	# 	- server created (addServer)
+	#   - client created (addClient)
+	# Parameters:
+	# Parameters:
+	# 	- server_name (required)
+	# 	- client_name (required)
+	# 	- ip_address (required)
+
+	if [[ -z $1 ]] || [[ -z $2 ]] || [[ -z $3 ]]; then
+		echo "Please specify client name, server name and IP address"
+		exit 1
+	fi
+	local server_name="$1"
+	local client_name="$2"
+	local ip_address="$3"
+
+	local client_config_file="$OPENVPN_DIR/$server_name/ccd/$client_name"
+	if [[ -f "$client_config_file" ]]; then
+		sed -i "s/^ifconfig-push.*/ifconfig-push $ip_address/" "$client_config_file"
+	else
+		echo "ifconfig-push $ip_address" > "$client_config_file"
+	fi
+}
+
+function unsetStaticIp() {
+	# Unset static IP for a client
+	# Requirements:
+	# 	- server created (addServer)
+	#   - client created (addClient)
+	# Parameters:
+	# 	- server_name (required)
+	# 	- client_name (required)
+
+	if [[ -z $1 ]] || [[ -z $2 ]]; then
+		echo "Please specify client name and server name"
+		exit 1
+	fi
+	local server_name="$1"
+	local client_name="$2"
+
+	local client_config_file="$OPENVPN_DIR/$server_name/ccd/$client_name"
+	if [[ -f "$client_config_file" ]]; then
+		sed -i "/^ifconfig-push.*/d" "$client_config_file"
+	fi
 }
 
 ### ********** Configurable parameters ********** ###
