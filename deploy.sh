@@ -156,7 +156,8 @@ function setupClientPki () {
 	pushd "$server_config_dir/easy-rsa" > /dev/null || echo "Error: $server_config_dir/easy-rsa not exists"
 	echo 'yes' | ./easyrsa build-client-full "$client_name" nopass
 	mkdir -p "$server_config_dir/clients/$client_name"
-	cp pki/inline/$client_name.inline pki/issued/$client_name.crt pki/private/$client_name.key $server_config_dir/clients/$client_name
+	# cp pki/inline/$client_name.inline pki/issued/$client_name.crt pki/private/$client_name.key $server_config_dir/clients/$client_name
+	cp pki/issued/$client_name.crt pki/private/$client_name.key $server_config_dir/clients/$client_name
 	popd
 }
 
@@ -189,6 +190,10 @@ function generateClientConfig () {
 	SERVER_IP=$SERVER_IP \
 	SERVER_PORT=$server_port \
 	SERVER_NAME=$server_name \
+	# CA_CRT="$(cat $OPENVPN_DIR/ca.crt)" \
+	# CLIENT_CRT="$(cat $EASYRSA_DIR/pki/issued/$CLIENT_NAME.crt)" \
+	# CLIENT_KEY="$(cat $EASYRSA_DIR/pki/private/$CLIENT_NAME.key)" \
+	# TLS_CRYPT_KEY="$(cat $OPENVPN_DIR/tls-crypt.key)" \
 	envsubst < $CLIENT_TEMPLATE_FILE | removeComments > "$client_config_file"
 	
 	{
