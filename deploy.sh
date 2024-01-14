@@ -153,7 +153,7 @@ function setupClientPki () {
 
 	local server_config_dir="$OPENVPN_DIR/$server_name"
 
-	pushd "$server_config_dir/$client_name/easy-rsa" > /dev/null || echo "Error: $server_config_dir/easy-rsa not exists"
+	pushd "$server_config_dir/easy-rsa" > /dev/null || echo "Error: $server_config_dir/easy-rsa not exists"
 	echo 'yes' | ./easyrsa build-client-full "$client_name" nopass
 	mkdir -p "$server_config_dir/clients/$client_name"
 	cp pki/inline/$client_name.inline pki/issued/$client_name.crt pki/private/$client_name.key $server_config_dir/clients/$client_name
