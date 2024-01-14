@@ -21,3 +21,17 @@ tls-cipher TLS-ECDHE-ECDSA-WITH-AES-128-GCM-SHA256
 ignore-unknown-option block-ouside-dns
 setenv opt block-ouside-dns # Prevent Windows 10 DNS leak
 verb 3
+
+<ca>
+$CA_CRT
+</ca>
+<cert>
+$CLIENT_CRT
+</cert>
+<key>
+$CLIENT_KEY
+</key>
+
+<tls-crypt>
+$TLS_CRYPT_KEY
+</tls-crypt>

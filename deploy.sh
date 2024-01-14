@@ -187,35 +187,21 @@ function generateClientConfig () {
 	# Rather ugly
 	local server_port=$(cat $OPENVPN_DIR/$server_name/$server_name.conf | grep '^port' | awk '{print $2}')
 
+	# Generate inline config
 	SERVER_IP=$SERVER_IP \
 	SERVER_PORT=$server_port \
 	SERVER_NAME=$server_name \
-	# CA_CRT="$(cat $OPENVPN_DIR/ca.crt)" \
-	# CLIENT_CRT="$(cat $EASYRSA_DIR/pki/issued/$CLIENT_NAME.crt)" \
-	# CLIENT_KEY="$(cat $EASYRSA_DIR/pki/private/$CLIENT_NAME.key)" \
-	# TLS_CRYPT_KEY="$(cat $OPENVPN_DIR/tls-crypt.key)" \
+	CA_CRT="$(cat $OPENVPN_DIR/$server_name/ca.crt)" \
+	CLIENT_CRT="$(cat $OPENVPN_DIR/$server_name/clients/$client_name/$client_name.crt)" \
+	CLIENT_KEY="$(cat $OPENVPN_DIR/$server_name/clients/$client_name/$client_name.key)" \
+	TLS_CRYPT_KEY="$(cat $OPENVPN_DIR/$server_name/tls-crypt.key | removeComments)" \
+	envsubst < $CLIENT_INLINE_TEMPLATE_FILE | removeComments > "$client_config_inline"
+
+	# Generate normal config
+	SERVER_IP=$SERVER_IP \
+	SERVER_PORT=$server_port \
+	SERVER_NAME=$server_name \
 	envsubst < $CLIENT_TEMPLATE_FILE | removeComments > "$client_config_file"
-	
-	{
-		cat "$client_config_file"
-		echo
-
-		echo "<ca>"
-		cat $OPENVPN_DIR/$server_name/ca.crt
-		echo "</ca>"
-
-		echo "<cert>"
-		cat $OPENVPN_DIR/$server_name/clients/$client_name/$client_name.crt | removeComments
-		echo "</cert>"
-
-		echo "<key>"
-		cat $OPENVPN_DIR/$server_name/clients/$client_name/$client_name.key | removeComments
-		echo "</key>"
-
-		echo "<tls-crypt>"
-		cat $OPENVPN_DIR/$server_name/tls-crypt.key | removeComments
-		echo "</tls-crypt>" 
-	} > "$client_config_inline"
 }
 
 function addClient () {
@@ -380,6 +366,7 @@ ADD_OPENVPN_RULES_TEMPLATE_FILE="$(realpath templates/add-openvpn-rules.sh.templ
 REMOVE_OPENVPN_RULES_TEMPLATE_FILE="$(realpath templates/remove-openvpn-rules.sh.template)"
 IPTABLES_OPENVPN_SERVICE_TEMPLATE_FILE="$(realpath templates/iptables-openvpn.service.template)"
 OPENVPN_SERVICE_TEMPLATE_FILE="$(realpath templates/openvpn.service.template)"
+CLIENT_INLINE_TEMPLATE_FILE="$(realpath templates/client-inline.ovpn.template)"
 
 # Easy-rsa
 EASYRSA_ALGO=ec
