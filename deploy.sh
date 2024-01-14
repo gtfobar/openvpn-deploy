@@ -56,8 +56,8 @@ function generateServerConfig () {
 		exit 1
 	fi
 	local server_name=$1
-	local server_port=$1
-	local ip_range=$1
+	local server_port=$2
+	local ip_range=$3
 
 	local server_config_dir="$OPENVPN_DIR/$server_name"
 
