@@ -65,7 +65,7 @@ function generateServerConfig () {
 	local resolvconf='/etc/resolv.conf'
 
 	# Obtain first resolver from resolv.conf
-	local nameserver=$(sed -ne 's/^nameserver[[:space:]]\+\([^[:space:]]\+\).*$/\1/p' $RESOLVCONF | head -n 1)
+	local nameserver=$(sed -ne 's/^nameserver[[:space:]]\+\([^[:space:]]\+\).*$/\1/p' $resolvconf | head -n 1)
 
 	SERVER_PORT=$server_port \
 	SERVER_NAME=$server_name \
