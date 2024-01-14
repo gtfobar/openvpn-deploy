@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=$IPTABLES_DIR/remove-rules-%i.sh
+ExecStart=$IPTABLES_DIR/add-rules-%i.sh
 ExecStop=$IPTABLES_DIR/remove-rules-%i.sh
 RemainAfterExit=yes
 
