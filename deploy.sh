@@ -80,6 +80,7 @@ function setupServerPki () {
 	echo "[*] Configuring PKI for server $server_name"
 
 	### Initialize and go to temporary working directory
+	local server_config_dir="$OPENVPN_DIR/$server_name"
 	mkdir -p $server_config_dir/easy-rsa
 	cp -r /usr/share/easy-rsa/* $server_config_dir/easy-rsa || echo "Error: easy-rsa not installed"
 	pushd $server_config_dir/easy-rsa > /dev/null || echo "Error: unable to use $server_config_dir/easy-rsa directory"
@@ -207,6 +208,95 @@ function addServer() {
 	configureIpTables $server_name
 }
 
+function removeServerSystemdConfig() {
+
+	if [[ -z $1 ]]; then
+		echo "Please specify server name"
+		exit 1
+	fi
+	local server_name=$1
+
+	debugPrint "[*] Disabling OpenVPN server systemd script and removing configs..." true
+
+	systemctl disable openvpn@$server_name
+	systemctl stop openvpn@$server_name
+	debugPrint " - systemd script disabled and stopped"
+
+	local systemd_script_path="/etc/systemd/system/openvpn@$server_name.service"
+	rm $systemd_script_path
+	rm -rf "/run/openvpn/$server_name"
+}
+
+function stopIptablesSystemd() {
+	local server_name=$1
+	if [ -z $server_name ]; then
+		echo "Please specify server name. Exiting..."
+		exit 1
+	fi
+
+	systemctl stop iptables-openvpn@$server_name
+	systemctl disable iptables-openvpn@$server_name
+	debugPrint " - iptables-openvpn@$server_name disabled and stopped"
+
+	IPTABLES_SERVER_DIR=$IPTABLES_DIR/$server_name
+
+	local iptables_service_path="/etc/systemd/system/iptables-openvpn@$server_name.service"
+	rm -f $iptables_service_path
+	debugPrint " - $iptables_service_path removed"
+}
+
+
+function rollbackIpTables() {
+	local server_name=$1
+
+	debugPrint "[*] Rolling back iptables for $server_name... " true
+	stopIptablesSystemd $server_name
+	debugPrint " - stoppend and disabled systemd script"
+	if $DEBUG; then
+		iptables -L
+	fi
+
+
+	IPTABLES_SERVER_DIR=$IPTABLES_DIR/$server_name
+	rm -rf $IPTABLES_SERVER_DIR
+	debugPrint " - $IPTABLES_SERVER_DIR removed"
+
+}
+
+function removeServerConfig() {
+	if [[ -z $1 ]]; then
+		echo "Please specify server name"
+		exit 1
+	fi
+	local server_name=$1
+
+
+	echo "[*] Removing config for server $server_name"
+
+	### Initialize and go to temporary working directory
+	local server_config_dir="$OPENVPN_DIR/$server_name"
+	rm -rf $server_config_dir
+}
+
+function removeServer() {
+
+	local server_name=$1
+
+	if [[ -z $server_name ]]; then
+		echo "Please specify server name. Exiting..."
+		exit 1
+	fi
+
+	if ! serverExists $server_name; then
+		echo "Exiting..."
+		exit 1
+	fi
+
+	rollbackIpTables $server_name
+	removeServerSystemdConfig $server_name
+	removeServerConfig $server_name
+}
+
 function removeComments () {
 	# Remove comments from stdin
 	sed -e '/^#/d'
@@ -261,8 +351,8 @@ function generateClientConfig () {
 	local clients_dir="$OPENVPN_DIR/$server_name/clients/$client_name"
 	mkdir -p $clients_dir
 
-	local client_config_inline="$clients_dir/$client_name-inline.ovpn"
-	local client_config_file="$clients_dir/$client_name.ovpn"
+	local client_config_inline="$clients_dir/$server_name-$client_name-inline.ovpn"
+	local client_config_file="$clients_dir/$server_name-$client_name.ovpn"
 
 	# Rather ugly
 	local server_port=$(cat $OPENVPN_DIR/$server_name/$server_name.conf | grep '^port' | awk '{print $2}')
@@ -357,18 +447,19 @@ function configureIpTables () {
 	fi
 	debugPrint " - routing enabled"
 
-	mkdir -p $IPTABLES_DIR
+	IPTABLES_SERVER_DIR=$IPTABLES_DIR/$server_name
+	mkdir -p $IPTABLES_SERVER_DIR
 
 
 	NIC=$NETWORK_INTERFACE \
 	IP_RANGE=$ip_range \
 	PORT=$server_port \
 	PROTOCOL=udp \
-	envsubst < $ADD_OPENVPN_RULES_TEMPLATE_FILE > $IPTABLES_DIR/add-rules-$server_name.sh
+	envsubst < $ADD_OPENVPN_RULES_TEMPLATE_FILE > $IPTABLES_SERVER_DIR/add-rules-$server_name.sh
 
-	debugPrint " - $IPTABLES_DIR/add-rules-$server_name.sh created:"
+	debugPrint " - $IPTABLES_SERVER_DIR/add-rules-$server_name.sh created:"
 	if $DEBUG; then
-		cat "$IPTABLES_DIR/add-rules-$server_name.sh"
+		cat "$IPTABLES_SERVER_DIR/add-rules-$server_name.sh"
 		echo
 	fi
 
@@ -376,16 +467,16 @@ function configureIpTables () {
 	IP_RANGE=$ip_range \
 	PORT=$server_port \
 	PROTOCOL=udp \
-	envsubst < $REMOVE_OPENVPN_RULES_TEMPLATE_FILE > $IPTABLES_DIR/remove-rules-$server_name.sh
+	envsubst < $REMOVE_OPENVPN_RULES_TEMPLATE_FILE > $IPTABLES_SERVER_DIR/remove-rules-$server_name.sh
 
-	debugPrint " - $IPTABLES_DIR/remove-rules-$server_name.sh created:"
+	debugPrint " - $IPTABLES_SERVER_DIR/remove-rules-$server_name.sh created:"
 	if $DEBUG; then
-		cat "$IPTABLES_DIR/remove-rules-$server_name.sh"
+		cat "$IPTABLES_SERVER_DIR/remove-rules-$server_name.sh"
 		echo
 	fi
 
-	chmod +x $IPTABLES_DIR/add-rules-$server_name.sh
-	chmod +x $IPTABLES_DIR/remove-rules-$server_name.sh
+	chmod +x $IPTABLES_SERVER_DIR/add-rules-$server_name.sh
+	chmod +x $IPTABLES_SERVER_DIR/remove-rules-$server_name.sh
 	debugPrint " - permissions configured"
 
 	deployIptablesSystemd $server_name
@@ -404,7 +495,10 @@ function deployIptablesSystemd () {
 
 	debugPrint "[*] Deploying iptables systemd service..." true
 
-	local iptables_service="/etc/systemd/iptables-openvpn@$server_name.service"
+	IPTABLES_SERVER_DIR=$IPTABLES_DIR/$server_name
+
+	local iptables_service="/etc/systemd/system/iptables-openvpn@$server_name.service"
+	IPTABLES_DIR=$IPTABLES_SERVER_DIR \
 	envsubst < $IPTABLES_OPENVPN_SERVICE_TEMPLATE_FILE > $iptables_service
 	debugPrint " - $iptables_service created:"
 	if $DEBUG; then
@@ -475,7 +569,7 @@ function unsetStaticIp() {
 OPENVPN_DIR="/etc/openvpn"
 # OPENVPN_DIR="/tmp/openvpn"
 # IPTABLES_DIR="/tmp/iptables"
-IPTABLES_DIR="/etc/iptables"
+IPTABLES_DIR="/etc/iptables/openvpn"
 NETWORK_INTERFACE=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
 DEPENDENCIES="gettext openvpn easy-rsa iptables openssl"
 DEBUG=true
@@ -547,6 +641,13 @@ elif [[ $COMMAND == "revoke-client" ]]; then
 	CLIENT_NAME=${2:-$CLIENT_NAME}
 	# revokeClient $CLIENT_NAME
 	# echo "Not implemented"
+elif [[ $COMMAND == "rm-server" ]]; then
+	SERVER_NAME=$2
+	if [[ -z $SERVER_NAME ]]; then
+		echo "Error: server name not specified"
+		exit 1
+	fi
+	removeServer $SERVER_NAME
 else
 	echo "Usage: $0 [install-deps|setup-server|add-client|add-clients|configure-iptables|deploy-server]"
 fi

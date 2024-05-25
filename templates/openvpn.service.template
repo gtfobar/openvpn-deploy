@@ -24,4 +24,5 @@ ProtectHome=true
 RestartSec=5s
 Restart=on-failure
 
-[Install] WantedBy=multi-user.target
+[Install]
+WantedBy=multi-user.target
