@@ -11,8 +11,8 @@ Documentation=https://community.openvpn.net/openvpn/wiki/HOWTO
 [Service]
 Type=notify
 PrivateTmp=true
-WorkingDirectory=$OPENVPN_DIR
-ExecStart=/usr/sbin/openvpn --daemon ovpn-%i --status /run/openvpn/%i/%i.status 10 --cd $OPENVPN_DIR --config /etc/openvpn/%i/%i.conf --writepid /run/openvpn/%i/%i.pid
+WorkingDirectory=$WORKING_DIR
+ExecStart=/usr/sbin/openvpn --daemon ovpn-%i --status /run/openvpn/%i/%i.status 10 --cd $WORKING_DIR --config /etc/openvpn/%i/%i.conf --writepid /run/openvpn/%i/%i.pid
 PIDFile=/run/openvpn/%i.pid
 KillMode=process
 CapabilityBoundingSet=CAP_IPC_LOCK CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW CAP_SETGID CAP_SETUID CAP_SYS_CHROOT CAP_DAC_OVERRIDE CAP_AUDIT_WRITE
@@ -24,5 +24,4 @@ ProtectHome=true
 RestartSec=5s
 Restart=on-failure
 
-[Install]
-WantedBy=multi-user.target
+[Install] WantedBy=multi-user.target
